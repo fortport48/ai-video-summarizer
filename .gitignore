@@ -1,0 +1,28 @@
+# Node dependency directory
+node_modules/
+dist/
+.eslintcache
+*.local
+
+# Python environment & cache
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+
+# Local databases and configs
+.env
+video_summarizer.db
+video_summarizer.db-journal
+
+# Media and file storage folders
+uploads/
+highlights/
+summaries/
+transcripts/
+backend/uploads/
+backend/highlights/
+backend/summaries/
+backend/transcripts/

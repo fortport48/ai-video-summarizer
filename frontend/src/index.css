@@ -1,0 +1,84 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-slate-950 text-slate-100 font-sans antialiased selection:bg-brand-500/20 selection:text-white transition-colors duration-300;
+    /* Soft, professional gradient ambient lighting instead of harsh radial blobs */
+    background-image: 
+      radial-gradient(ellipse at 50% -20%, rgba(99, 102, 241, 0.08) 0px, transparent 70%),
+      radial-gradient(ellipse at 50% 100%, rgba(139, 92, 246, 0.04) 0px, transparent 80%);
+    background-attachment: fixed;
+  }
+}
+
+/* Premium Panel Styling */
+.panel {
+  @apply bg-slate-900/60 border border-slate-800 rounded-xl transition-all duration-200 shadow-sm backdrop-blur-md;
+}
+
+.panel-card {
+  @apply panel p-6;
+}
+
+.panel-card:hover {
+  @apply border-slate-700/80 shadow-md;
+}
+
+.glass-card {
+  @apply panel-card;
+}
+
+/* Form Elements */
+.glass-input {
+  @apply w-full bg-slate-950/70 border border-slate-800 rounded-lg px-4 py-2.5 text-slate-200 placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-brand-500 focus:border-brand-500 transition-all duration-150 text-sm;
+}
+
+/* Buttons */
+.glass-btn {
+  @apply px-4 py-2 rounded-lg font-medium transition-all duration-150 active:scale-[0.98] flex items-center justify-center gap-2 text-sm shadow-sm;
+}
+
+.glass-btn-primary {
+  @apply glass-btn bg-brand-600 hover:bg-brand-500 text-white border border-brand-500/30 hover:border-brand-500/50 hover:shadow-brand-500/10;
+}
+
+.glass-btn-secondary {
+  @apply glass-btn bg-slate-900 border border-slate-800 text-slate-300 hover:bg-slate-800/80 hover:text-white hover:border-slate-700;
+}
+
+.glass-btn-danger {
+  @apply glass-btn bg-red-600 hover:bg-red-600/90 text-white border border-red-500/20 hover:border-red-500/40;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.3);
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.15);
+  border-radius: 99px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.3);
+}
+
+/* Skeletons */
+.skeleton {
+  @apply bg-slate-800/40 animate-pulse rounded;
+}
+
+/* Clean text hierarchy */
+.glow-text {
+  text-shadow: none !important;
+}
