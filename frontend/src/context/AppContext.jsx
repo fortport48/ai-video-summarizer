@@ -32,8 +32,8 @@ export const AppProvider = ({ children }) => {
     aiModel: 'Gemini'
   });
 
-  // Base API configuration
-  const API_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000/api';
+  // Base API configuration (supports VITE_API, VITE, or VITE_API_URL)
+  const API_URL = import.meta.env.VITE_API || import.meta.env.VITE || import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000/api';
 
   useEffect(() => {
     if (theme === 'dark') {
