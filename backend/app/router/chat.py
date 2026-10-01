@@ -85,13 +85,32 @@ def ask_question(
     if not segments:
         raise HTTPException(status_code=400, detail="Transcript is not available yet. Process the video first.")
         
-    context = "\n".join([f"[{format_time(s.start_time)} - {format_time(s.end_time)}]: {s.text}" for s in segments])
-    query = payload.message
+    # Smart RAG Context Retrieval: Limit context to top relevant segments or concise transcript overview
+    query_lower = query.lower()
+    stop_words = {"what", "where", "when", "how", "who", "why", "this", "that", "there", "with", "from", "about", "is", "are", "can", "you", "tell", "does", "the", "a", "an", "in", "on", "at", "to", "for", "of"}
+    query_words = [w.strip(".,!?\"'") for w in query_lower.split() if len(w) > 2 and w not in stop_words]
+    
+    selected_segments = []
+    if len(segments) > 25 and query_words:
+        scored_segs = []
+        for s in segments:
+            text_l = s.text.lower()
+            score = sum(2 if w in text_l else 0 for w in query_words)
+            scored_segs.append((score, s))
+        
+        scored_segs.sort(key=lambda x: x[0], reverse=True)
+        top_segs = [s for _, s in scored_segs[:15]]
+        top_segs.sort(key=lambda s: s.start_time)
+        selected_segments = top_segs
+    else:
+        selected_segments = segments
+
+    context = "\n".join([f"[{format_time(s.start_time)} - {format_time(s.end_time)}]: {s.text}" for s in selected_segments])
     
     # Advanced RAG prompt for high quality synthesis
     prompt = f"""
     You are an expert AI video content analyst and synthesizer for the video titled "{video.title}".
-    Below is the complete transcript with timestamps:
+    Below is the relevant transcript context with timestamps:
     ---
     {context}
     ---
@@ -110,49 +129,61 @@ def ask_question(
 
     answer = None
 
-    # 1. Try Gemini API (with generous 15s timeout)
+    # 1. Try Gemini API (with 15s timeout)
     if settings.GEMINI_API_KEY:
         def call_gemini():
-            import google.generativeai as genai
-            genai.configure(api_key=settings.GEMINI_API_KEY)
-            model = genai.GenerativeModel("gemini-1.5-flash")
-            response = model.generate_content(prompt)
-            return response.text if response else None
+            try:
+                import google.generativeai as genai
+                genai.configure(api_key=settings.GEMINI_API_KEY)
+                model = genai.GenerativeModel("gemini-1.5-flash")
+                response = model.generate_content(prompt)
+                if response and hasattr(response, 'text') and response.text:
+                    return response.text.strip()
+            except Exception as ex:
+                logger.warning(f"Gemini API call execution error: {ex}")
+                return None
 
         answer = run_with_timeout(call_gemini, timeout_seconds=15.0)
 
-    # 2. Try HuggingFace (with generous 15s timeout)
+    # 2. Try HuggingFace (with 15s timeout)
     if not answer and settings.HF_API_TOKEN:
         def call_hf():
-            from huggingface_hub import InferenceClient
-            client = InferenceClient(token=settings.HF_API_TOKEN)
-            response = client.text_generation(
-                prompt,
-                model="meta-llama/Meta-Llama-3-8B-Instruct",
-                max_new_tokens=500
-            )
-            return response
+            try:
+                from huggingface_hub import InferenceClient
+                client = InferenceClient(token=settings.HF_API_TOKEN)
+                response = client.text_generation(
+                    prompt,
+                    model="meta-llama/Meta-Llama-3-8B-Instruct",
+                    max_new_tokens=500
+                )
+                return response
+            except Exception as ex:
+                logger.warning(f"Hugging Face API call execution error: {ex}")
+                return None
 
         answer = run_with_timeout(call_hf, timeout_seconds=15.0)
 
-    # 3. Try OpenAI (with generous 15s timeout)
+    # 3. Try OpenAI (with 15s timeout)
     if not answer and settings.OPENAI_API_KEY:
         def call_openai():
-            from openai import OpenAI
-            client = OpenAI(api_key=settings.OPENAI_API_KEY)
-            completion = client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=500
-            )
-            return completion.choices[0].message.content
+            try:
+                from openai import OpenAI
+                client = OpenAI(api_key=settings.OPENAI_API_KEY)
+                completion = client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=[{"role": "user", "content": prompt}],
+                    max_tokens=500
+                )
+                return completion.choices[0].message.content
+            except Exception as ex:
+                logger.warning(f"OpenAI API call execution error: {ex}")
+                return None
 
         answer = run_with_timeout(call_openai, timeout_seconds=15.0)
 
     # 4. Advanced Analytical AI Synthesis Engine (Offline Fallback)
     if not answer:
         logger.info("Using advanced analytical AI synthesis engine (offline mode).")
-        query_lower = query.lower()
         
         if any(k in query_lower for k in ["summarize", "summary", "overview", "describe", "explain"]):
             start_t = format_time(segments[0].start_time) if segments else "00:00"
@@ -183,20 +214,14 @@ def ask_question(
             items = [f"• [ ] {act}" for act in (video.action_items or ["Configure application parameters and environment setup."])]
             answer = f"### Action Items & Next Steps\n\nSynthesized action plan extracted from the presentation:\n\n" + "\n".join(items)
         else:
-            # Semantic relevance scoring and natural language transformation
-            stop_words = {"what", "where", "when", "how", "who", "why", "this", "that", "there", "with", "from", "about", "is", "are", "can", "you", "tell", "does", "the"}
-            words = [w.strip(".,!?") for w in query_lower.split() if len(w) > 2 and w not in stop_words]
-            
             matched_segments = []
-            if words:
+            if query_words:
                 for s in segments:
                     text_l = s.text.lower()
-                    # Count keyword hits for scoring
-                    score = sum(1 for w in words if w in text_l)
+                    score = sum(1 for w in query_words if w in text_l)
                     if score > 0:
                         matched_segments.append((score, s))
             
-            # Sort by relevance score descending
             matched_segments.sort(key=lambda x: x[0], reverse=True)
             top_matches = [m[1] for m in matched_segments[:3]]
             
