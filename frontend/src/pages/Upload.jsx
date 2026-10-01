@@ -106,8 +106,12 @@ export default function Upload({ setActivePage }) {
       }, 1500);
 
     } catch (err) {
-      console.error(err);
-      addNotification(err.response?.data?.detail || 'Failed to complete video pipeline creation.', 'error');
+      console.error('Upload/Process Error:', err);
+      const detailedError = err.response?.data?.detail 
+        || err.response?.data?.message 
+        || err.message 
+        || 'Failed to complete video pipeline creation.';
+      addNotification(detailedError, 'error');
       setIsUploading(false);
       setUploadProgress(0);
     }
