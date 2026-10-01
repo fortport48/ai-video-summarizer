@@ -120,7 +120,13 @@ export default function Upload({ setActivePage }) {
   return (
     <div className="p-6 md:p-8 max-w-6xl mx-auto space-y-8">
       <div>
-        <h1 className="text-3xl font-extrabold tracking-tight text-white glow-text">Upload Video</h1>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h1 className="text-3xl font-extrabold tracking-tight text-white glow-text">Upload Video</h1>
+          <span className="text-xs font-mono bg-slate-800/80 text-brand-400 px-3 py-1 rounded-full border border-slate-700/80 flex items-center gap-1.5 shadow-sm">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+            API: {API_URL}
+          </span>
+        </div>
         <p className="text-slate-400 text-sm mt-1">Submit long lectures, podcasts, or webinars to generate highlights</p>
       </div>
 
