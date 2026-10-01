@@ -36,10 +36,17 @@ if os.path.exists(settings.UPLOADS_DIR):
 if os.path.exists(settings.HIGHLIGHTS_DIR):
     app.mount("/highlights", StaticFiles(directory=settings.HIGHLIGHTS_DIR), name="highlights")
 
+# Primary routes with /api prefix
 app.include_router(auth.router, prefix="/api")
 app.include_router(videos.router, prefix="/api")
 app.include_router(chat.router, prefix="/api")
 app.include_router(analytics.router, prefix="/api")
+
+# Fallback routes without prefix for maximum compatibility
+app.include_router(auth.router)
+app.include_router(videos.router)
+app.include_router(chat.router)
+app.include_router(analytics.router)
 
 @app.get("/")
 def read_root():
