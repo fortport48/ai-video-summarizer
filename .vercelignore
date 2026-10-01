@@ -1,40 +1,24 @@
-# Exclude Python Virtual Environments (PyTorch / OpenCV binaries ~ 3 GB)
-backend/venv/
+# Ignore Python Backend & ML dependencies for Vercel Frontend build
+backend/
+api/
+*.py
+requirements.txt
+Dockerfile
+render.yaml
+
+# Virtual environments & cache
 venv/
-**/venv/
 __pycache__/
 *.pyc
-*.pyo
 
-# Exclude Node Modules & Build Artifacts
-node_modules/
-frontend/node_modules/
-**/node_modules/
-dist/
-frontend/dist/
-
-# Exclude Local Uploads & Output Videos
+# Local storage & databases
 uploads/
 highlights/
 summaries/
 transcripts/
-backend/uploads/
-backend/highlights/
-backend/summaries/
-backend/transcripts/
-
-# Exclude Local Databases
 *.db
 *.sqlite
-video_summarizer.db
 
-# Exclude Large Image & System Files
-*.png
-*.jpg
-*.zip
-*.tar.gz
-
-# Exclude Git & IDE Settings
+# Git & IDE settings
 .git/
-.gitignore
 .vscode/
