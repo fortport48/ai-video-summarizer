@@ -226,29 +226,29 @@ def ask_question(
             top_matches = [m[1] for m in matched_segments[:3]]
             
             if top_matches:
-                synthesized_bullets = []
+                synthesized_insights = []
                 for s in top_matches:
                     t_str = format_time(s.start_time)
-                    transformed_text = rephrase_transcript_segment(s.text)
-                    synthesized_bullets.append(f"• **`[{t_str}]` Context**: {transformed_text}")
+                    rephrased = rephrase_transcript_segment(s.text)
+                    synthesized_insights.append(f"• **Timestamp `[{t_str}]`**: {rephrased}")
                 
-                lead_concept = rephrase_transcript_segment(top_matches[0].text)
+                main_insight = rephrase_transcript_segment(top_matches[0].text)
                 
                 answer = (
-                    f"### Synthesis: Analysis of \"{video.title}\"\n\n"
-                    f"In response to your query regarding *\"{query}\"*, the presentation explains that **{lead_concept.lower()[:-1] if lead_concept.endswith('.') else lead_concept.lower()}**.\n\n"
-                    f"### Key Relevant Sections:\n"
-                    + "\n".join(synthesized_bullets) + "\n\n"
-                    f"**Summary Conclusion**: The video addresses this topic through practical demonstrations and structural explanations at the cited timestamps."
+                    f"### AI Executive Synthesis: {video.title}\n\n"
+                    f"Based on the video content, {main_insight.lower()[:-1] if main_insight.endswith('.') else main_insight.lower()}.\n\n"
+                    f"#### 📌 Key Structural Takeaways & Timestamp References:\n"
+                    + "\n".join(synthesized_insights) + "\n\n"
+                    f"**Summary**: The presenter addresses *\"{query}\"* directly in these segments, providing technical context and visual demonstrations."
                 )
             else:
                 top_segments = segments[:3] if segments else []
-                synthesized_bullets = [f"• **`[{format_time(s.start_time)}]` Key Point**: {rephrase_transcript_segment(s.text)}" for s in top_segments]
+                synthesized_insights = [f"• **Timestamp `[{format_time(s.start_time)}]`**: {rephrase_transcript_segment(s.text)}" for s in top_segments]
                 answer = (
-                    f"### Content Synthesis & Analysis\n\n"
-                    f"I analyzed the transcript for **\"{video.title}\"** regarding your question.\n\n"
+                    f"### AI Analysis: {video.title}\n\n"
+                    f"Here is a synthesized overview regarding *\"{query}\"*:\n\n"
                     f"**Executive Context:** {video.summary or 'The video presents structural overview and technical details.'}\n\n"
-                    f"**Synthesized Highlights:**\n" + "\n".join(synthesized_bullets)
+                    f"#### 📌 Primary Content Highlights:\n" + "\n".join(synthesized_insights)
                 )
 
     db_msg_user = models.ChatMessage(video_id=video.id, role="user", content=query)
