@@ -79,8 +79,13 @@ export default function Summary({ setActivePage }) {
       });
       setChatMessages((prev) => [...prev, response.data]);
     } catch (err) {
-      console.error(err);
-      addNotification('Failed to query RAG assistant', 'error');
+      console.error('RAG Error:', err);
+      const detailMsg = err.response?.data?.detail || err.response?.data?.message || err.message || 'Failed to query RAG assistant.';
+      addNotification(detailMsg, 'error');
+      setChatMessages((prev) => [
+        ...prev, 
+        { role: 'assistant', content: `⚠️ **RAG Query Error**: ${detailMsg}` }
+      ]);
     } finally {
       setChatLoading(false);
     }
