@@ -3,7 +3,8 @@ import axios from 'axios';
 import { useApp } from '../context/AppContext';
 import { 
   FileText, Download, MessageSquare, Clock, Smile, 
-  Brain, Send, ArrowLeftRight, CheckSquare, Search, Copy, Check 
+  Brain, Send, ArrowLeftRight, CheckSquare, Search, Copy, Check,
+  Cpu, Loader2, Sparkles, AlertCircle, CheckCircle2
 } from 'lucide-react';
 
 export default function Summary({ setActivePage }) {
@@ -22,27 +23,41 @@ export default function Summary({ setActivePage }) {
   
   const chatEndRef = useRef(null);
 
-  const fetchVideoDetails = async () => {
+  const fetchVideoDetails = async (isPoll = false) => {
     if (!selectedVideo) return;
-    setLoading(true);
+    if (!isPoll) setLoading(true);
     try {
       const response = await axios.get(`${API_URL}/videos/${selectedVideo.id}`);
       setVideoData(response.data);
-      // Fetch initial chat logs from the video schema
-      setChatMessages([
-        { role: 'assistant', content: `Hello! I'm your RAG chat assistant for **"${response.data.title}"**. Ask me anything about the contents, transcripts, or decisions of this video.` }
-      ]);
+      if (!isPoll) {
+        setChatMessages([
+          { role: 'assistant', content: `Hello! I'm your RAG chat assistant for **"${response.data.title}"**. Ask me anything about the contents, transcripts, or decisions of this video.` }
+        ]);
+      }
     } catch (err) {
       console.error(err);
-      addNotification('Failed to fetch video details', 'error');
+      if (!isPoll) addNotification('Failed to fetch video details', 'error');
     } finally {
-      setLoading(false);
+      if (!isPoll) setLoading(false);
     }
   };
 
   useEffect(() => {
     fetchVideoDetails();
   }, [selectedVideo]);
+
+  // Polling loop when video is processing or pending
+  useEffect(() => {
+    if (!videoData || (videoData.status !== 'processing' && videoData.status !== 'pending')) {
+      return;
+    }
+
+    const interval = setInterval(() => {
+      fetchVideoDetails(true);
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [videoData?.status, selectedVideo]);
 
   // Scroll to bottom of chat
   useEffect(() => {
@@ -91,9 +106,9 @@ export default function Summary({ setActivePage }) {
       <div className="p-8 text-center max-w-lg mx-auto mt-20 glass-card">
         <FileText className="w-12 h-12 text-indigo-400 mx-auto mb-4 animate-float" />
         <h3 className="text-xl font-bold text-white">No Video Selected</h3>
-        <p className="text-slate-400 text-sm mt-2">Go back to the Dashboard or upload a new video to inspect AI summaries.</p>
-        <button onClick={() => setActivePage('dashboard')} className="glass-btn-primary mt-6 mx-auto">
-          Go to Dashboard
+        <p className="text-slate-400 text-sm mt-2">Upload a video to inspect AI summaries and transcripts.</p>
+        <button onClick={() => setActivePage('upload')} className="glass-btn-primary mt-6 mx-auto">
+          Upload Video
         </button>
       </div>
     );
@@ -107,6 +122,96 @@ export default function Summary({ setActivePage }) {
           <div className="h-60 skeleton rounded-2xl"></div>
         </div>
         <div className="h-[600px] skeleton rounded-2xl"></div>
+      </div>
+    );
+  }
+
+  // Processing Progress UI
+  if (videoData?.status === 'processing' || videoData?.status === 'pending') {
+    const steps = [
+      { id: 1, name: 'Audio Track Extraction (FFmpeg)', min: 0, max: 29 },
+      { id: 2, name: 'Speech-to-Text Transcription (Whisper)', min: 30, max: 39 },
+      { id: 3, name: 'Frame Understanding (OpenCV & BLIP-2)', min: 40, max: 59 },
+      { id: 4, name: 'Key Scene Detection (PySceneDetect)', min: 60, max: 74 },
+      { id: 5, name: 'AI Summary & Key Moments (LLM)', min: 75, max: 84 },
+      { id: 6, name: 'Clip Slicing & Reel Merging (FFmpeg)', min: 85, max: 100 },
+    ];
+    const currentProgress = typeof videoData?.progress_percent === 'number' ? videoData.progress_percent : 0;
+
+    return (
+      <div className="p-8 max-w-3xl mx-auto mt-12 space-y-8 glass-card">
+        <div className="text-center space-y-3">
+          <div className="w-16 h-16 rounded-2xl bg-brand-500/10 border border-brand-500/30 flex items-center justify-center mx-auto text-brand-400 shadow-xl shadow-brand-500/10">
+            <Loader2 className="w-8 h-8 animate-spin" />
+          </div>
+          <h2 className="text-2xl font-extrabold text-white glow-text">AI Video Processing in Progress</h2>
+          <p className="text-slate-400 text-sm max-w-md mx-auto">
+            Analyzing <span className="text-slate-200 font-semibold">"{videoData.title}"</span> through our automated multimodal AI pipeline.
+          </p>
+        </div>
+
+        {/* Live Progress Bar */}
+        <div className="space-y-2">
+          <div className="flex justify-between text-xs font-bold text-slate-300">
+            <span className="flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-brand-400 animate-pulse" />
+              {videoData.processing_stage || 'Processing pipeline...'}
+            </span>
+            <span className="text-brand-400">{currentProgress}%</span>
+          </div>
+          <div className="h-3 w-full bg-slate-900 rounded-full overflow-hidden border border-slate-800 p-0.5">
+            <div
+              className="h-full bg-gradient-to-r from-brand-500 via-indigo-500 to-purple-500 transition-all duration-500 rounded-full shadow-lg shadow-brand-500/50"
+              style={{ width: `${currentProgress}%` }}
+            ></div>
+          </div>
+        </div>
+
+        {/* Step Breakdown */}
+        <div className="space-y-3 pt-4 border-t border-slate-800">
+          <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400">Pipeline Workflow Steps</h4>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {steps.map((st) => {
+              const isDone = currentProgress > st.max;
+              const isCurrent = currentProgress >= st.min && currentProgress <= st.max;
+              return (
+                <div
+                  key={st.id}
+                  className={`p-3.5 rounded-xl border text-xs flex items-center gap-3 transition-all ${
+                    isDone
+                      ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                      : isCurrent
+                      ? 'bg-brand-500/15 border-brand-500/40 text-brand-300 shadow-md'
+                      : 'bg-slate-950/30 border-slate-800/80 text-slate-500'
+                  }`}
+                >
+                  {isDone ? (
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                  ) : isCurrent ? (
+                    <Loader2 className="w-4 h-4 text-brand-400 animate-spin flex-shrink-0" />
+                  ) : (
+                    <div className="w-4 h-4 rounded-full border border-slate-700 flex-shrink-0"></div>
+                  )}
+                  <span className="font-medium truncate">{st.name}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Failed State
+  if (videoData?.status === 'failed') {
+    return (
+      <div className="p-8 max-w-xl mx-auto mt-20 glass-card text-center space-y-4 border border-red-500/30">
+        <AlertCircle className="w-12 h-12 text-red-400 mx-auto animate-bounce" />
+        <h3 className="text-xl font-bold text-white">Pipeline Execution Failed</h3>
+        <p className="text-slate-400 text-sm">{videoData.error_message || 'An error occurred while processing the video pipeline.'}</p>
+        <button onClick={() => setActivePage('upload')} className="glass-btn-primary mt-4 mx-auto">
+          Try Uploading Again
+        </button>
       </div>
     );
   }
@@ -276,7 +381,7 @@ export default function Summary({ setActivePage }) {
                   msg.role === 'user' ? 'ml-auto items-end' : 'mr-auto items-start'
                 }`}
               >
-                <div className={`p-3 rounded-2xl text-xs leading-relaxed ${
+                <div className={`p-3 rounded-2xl text-xs leading-relaxed whitespace-pre-wrap ${
                   msg.role === 'user'
                     ? 'bg-brand-600 text-white rounded-br-none'
                     : 'bg-slate-800/80 border border-slate-700/50 text-slate-300 rounded-bl-none'

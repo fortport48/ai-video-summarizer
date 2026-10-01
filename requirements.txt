@@ -5,7 +5,6 @@ psycopg2-binary==2.9.9
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
 python-multipart==0.0.9
-moviepy==1.0.3
 openai==1.35.3
 google-generativeai==0.7.1
 huggingface_hub==0.23.4
@@ -14,6 +13,5 @@ python-dotenv==1.0.1
 reportlab==4.2.2
 python-docx==1.1.2
 jinja2==3.1.4
-pytest==8.2.2
 opencv-python-headless==4.9.0.80
 scenedetect==0.6.4

@@ -2,33 +2,38 @@ import logging
 from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
-from backend.app.config import settings
+from app.config import settings
 
 logger = logging.getLogger("uvicorn.error")
 
+import os
+
 DATABASE_URL = settings.DATABASE_URL
+if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+
 engine = None
 SessionLocal = None
 
 try:
-    if DATABASE_URL.startswith("postgresql"):
-        # Attempt connecting to PostgreSQL
+    if DATABASE_URL and DATABASE_URL.startswith("postgresql"):
         engine = create_engine(
             DATABASE_URL,
             pool_pre_ping=True,
-            pool_recycle=3600
+            pool_recycle=300
         )
-        # Test connection
         with engine.connect() as conn:
-            logger.info("Successfully connected to PostgreSQL database.")
+            logger.info("Successfully connected to PostgreSQL database (Supabase).")
     else:
         raise ValueError("Not a PostgreSQL URL")
 except Exception as e:
+    # Use /tmp for SQLite if running on Vercel/serverless where root is read-only
+    fallback_dir = "/tmp" if os.environ.get("VERCEL") or not os.access(".", os.W_OK) else "."
+    sqlite_db_path = os.path.join(fallback_dir, "video_summarizer.db")
     logger.warning(
-        f"PostgreSQL connection failed: {e}. Falling back to local SQLite database: sqlite:///./video_summarizer.db"
+        f"PostgreSQL connection failed: {e}. Falling back to SQLite database: sqlite:///{sqlite_db_path}"
     )
-    # Fallback to local SQLite database
-    sqlite_url = "sqlite:///./video_summarizer.db"
+    sqlite_url = f"sqlite:///{sqlite_db_path}"
     engine = create_engine(
         sqlite_url,
         connect_args={"check_same_thread": False}

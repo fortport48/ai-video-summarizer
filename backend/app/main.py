@@ -1,12 +1,15 @@
 import os
+import sys
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from backend.app.config import settings
-from backend.app.database import engine, Base
-from backend.app.router import auth, videos, chat, analytics
 
-# Create database tables automatically
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from app.config import settings
+from app.database import engine, Base
+from app.router import auth, videos, chat, analytics
+
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
@@ -15,20 +18,24 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# CORS configuration
+
+origins = ["*"]
+if os.getenv("ALLOWED_ORIGINS"):
+    origins = [o.strip() for o in os.getenv("ALLOWED_ORIGINS").split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # In production, restrict to frontend domain
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Mount media static directories to allow UI video playbacks
-app.mount("/uploads", StaticFiles(directory=settings.UPLOADS_DIR), name="uploads")
-app.mount("/highlights", StaticFiles(directory=settings.HIGHLIGHTS_DIR), name="highlights")
+if os.path.exists(settings.UPLOADS_DIR):
+    app.mount("/uploads", StaticFiles(directory=settings.UPLOADS_DIR), name="uploads")
+if os.path.exists(settings.HIGHLIGHTS_DIR):
+    app.mount("/highlights", StaticFiles(directory=settings.HIGHLIGHTS_DIR), name="highlights")
 
-# Include Routers
 app.include_router(auth.router, prefix="/api")
 app.include_router(videos.router, prefix="/api")
 app.include_router(chat.router, prefix="/api")
@@ -44,4 +51,4 @@ def read_root():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("backend.app.main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("app.main:app", host="127.0.0.1", port=8000, reload=True)

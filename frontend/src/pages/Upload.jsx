@@ -99,10 +99,10 @@ export default function Upload({ setActivePage }) {
       setUploadProgress(100);
       addNotification('AI Processing Pipeline started in background.', 'success');
       
-      // Auto redirect to Dashboard
+      // Auto redirect to Summary
       setTimeout(() => {
         setSelectedVideo(processRes.data);
-        setActivePage('dashboard');
+        setActivePage('summary');
       }, 1500);
 
     } catch (err) {

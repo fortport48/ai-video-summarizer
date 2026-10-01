@@ -3,16 +3,14 @@ import { useApp } from './context/AppContext';
 import Login from './pages/Login';
 import Navbar from './components/Navbar';
 import Toast from './components/Toast';
-import Dashboard from './pages/Dashboard';
 import Upload from './pages/Upload';
 import Summary from './pages/Summary';
 import Highlights from './pages/Highlights';
 import Settings from './pages/Settings';
-import Admin from './pages/Admin';
 
 export default function App() {
   const { isAuthenticated, loadingUser } = useApp();
-  const [activePage, setActivePage] = useState('dashboard');
+  const [activePage, setActivePage] = useState('upload');
 
   if (loadingUser) {
     return (
@@ -36,20 +34,16 @@ export default function App() {
 
   const renderPage = () => {
     switch (activePage) {
-      case 'dashboard':
-        return <Dashboard setActivePage={setActivePage} />;
       case 'upload':
         return <Upload setActivePage={setActivePage} />;
       case 'summary':
         return <Summary setActivePage={setActivePage} />;
       case 'highlights':
-        return <Highlights />;
+        return <Highlights setActivePage={setActivePage} />;
       case 'settings':
         return <Settings />;
-      case 'admin':
-        return <Admin />;
       default:
-        return <Dashboard setActivePage={setActivePage} />;
+        return <Upload setActivePage={setActivePage} />;
     }
   };
 

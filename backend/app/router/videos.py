@@ -5,10 +5,13 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status, BackgroundTasks
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
-from backend.app.database import get_db
-from backend.app import models, schemas, auth, pipeline
-from backend.app.config import settings
-from backend.app.utils import export
+from app.database import get_db
+from app import models, schemas, auth, pipeline
+from app.config import settings
+from app.utils import export
+import logging
+
+logger = logging.getLogger("uvicorn.error")
 
 router = APIRouter(prefix="/videos", tags=["Videos & Highlights"])
 
@@ -74,12 +77,25 @@ def upload_video(
 # Background processing pipeline
 def run_ai_pipeline(video_id: int, db_session_factory, model_type: str, highlight_style: str, summary_length: str):
     db = db_session_factory()
+    
+    def update_progress(percent: int, stage: str):
+        try:
+            v = db.query(models.Video).filter(models.Video.id == video_id).first()
+            if v:
+                v.progress_percent = percent
+                v.processing_stage = stage
+                db.commit()
+        except Exception as ex:
+            logger.warning(f"Failed to update progress: {ex}")
+
     try:
         video = db.query(models.Video).filter(models.Video.id == video_id).first()
         if not video:
             return
             
         video.status = "processing"
+        video.processing_stage = "Step 1/6: Extracting Audio Track (FFmpeg)"
+        video.progress_percent = 15
         db.commit()
         
         # Step 1: Extract audio
@@ -90,6 +106,7 @@ def run_ai_pipeline(video_id: int, db_session_factory, model_type: str, highligh
             raise Exception("Failed to extract audio from video.")
             
         # Step 2: Speech to Text (Whisper)
+        update_progress(30, "Step 2/6: Transcribing Speech to Text (Whisper)")
         segments = pipeline.transcribe_audio(audio_path)
         
         # Save transcript segments in database
@@ -105,9 +122,34 @@ def run_ai_pipeline(video_id: int, db_session_factory, model_type: str, highligh
             full_transcript_list.append(seg["text"])
             
         full_transcript = " ".join(full_transcript_list)
+        db.commit()
         
-        # Step 3 & 4: LLM analysis
-        analysis = pipeline.analyze_transcript_with_llm(full_transcript, model_type=model_type)
+        # Step 3: Frame Extraction (OpenCV)
+        update_progress(40, "Step 3/6: Analyzing Frames & Visual Captions (OpenCV & BLIP-2)")
+        frames_dir = os.path.join(settings.UPLOADS_DIR, "frames", str(video.id))
+        duration = video.duration or 60.0
+        interval = max(3.0, duration / 15.0)
+        frames = pipeline.extract_video_frames(video.filepath, frames_dir, interval_seconds=interval)
+        
+        # Step 4: Frame Understanding (BLIP/Gemini API)
+        def frame_progress_cb(completed, total):
+            pct = 40 + int((completed / max(1, total)) * 20) # 40% -> 60%
+            update_progress(min(pct, 59), f"Step 3/6: Analyzing Frame {completed}/{total} (Visual Captions)")
+
+        frame_captions = pipeline.generate_frame_captions(frames, progress_callback=frame_progress_cb)
+        
+        # Step 5: Key Scene Detection (PySceneDetect)
+        update_progress(60, "Step 4/6: Detecting Scene Transitions (PySceneDetect)")
+        scenes = pipeline.detect_key_scenes(video.filepath)
+        
+        # Step 6: LLM analysis combining transcript and frame captions
+        update_progress(75, f"Step 5/6: Generating AI Summary & Insights ({model_type})")
+        analysis = pipeline.analyze_transcript_with_llm(
+            full_transcript, 
+            model_type=model_type, 
+            frame_captions=frame_captions,
+            highlight_style=highlight_style
+        )
         
         # Adjust analysis details based on settings options
         if summary_length == "short":
@@ -116,19 +158,56 @@ def run_ai_pipeline(video_id: int, db_session_factory, model_type: str, highligh
             analysis["summary"] = analysis["summary"] + " This video covers deep concepts with thorough details."
 
         # Save AI analysis to Video
-        video.summary = analysis.get("summary")
-        video.bullet_points = analysis.get("bullet_points")
-        video.key_insights = analysis.get("key_insights")
-        video.action_items = analysis.get("action_items")
-        video.keywords = analysis.get("keywords")
-        video.topics = analysis.get("topics")
-        video.sentiment = analysis.get("sentiment")
-        video.reading_time = analysis.get("reading_time", 2)
-        video.named_entities = analysis.get("named_entities")
+        video = db.query(models.Video).filter(models.Video.id == video_id).first()
+        if video:
+            video.summary = analysis.get("summary")
+            video.bullet_points = analysis.get("bullet_points")
+            video.key_insights = analysis.get("key_insights")
+            video.action_items = analysis.get("action_items")
+            video.keywords = analysis.get("keywords")
+            video.topics = analysis.get("topics")
+            video.sentiment = analysis.get("sentiment")
+            video.reading_time = analysis.get("reading_time", 2)
+            video.named_entities = analysis.get("named_entities")
+            db.commit()
         
-        # Step 5, 6 & 7: Highlights generator
+        # Step 7: Highlight Generation (with PySceneDetect alignments)
+        update_progress(85, "Step 6/6: Slicing & Merging Highlights (FFmpeg & MoviePy)")
         moments = analysis.get("moments", [])
+        
+        # Align moments with PySceneDetect visual scenes safely
+        video_dur = video.duration or 60.0
         for moment in moments:
+            m_start = float(moment.get("start_time", 0.0))
+            m_end = float(moment.get("end_time", m_start + 15.0))
+            
+            # Ensure moment duration is concise (5 to 30 seconds)
+            if m_end <= m_start or (m_end - m_start) > 30.0 or (m_end - m_start) < 3.0:
+                m_end = min(video_dur, m_start + 15.0)
+            
+            # Clamp to video bounds
+            m_start = max(0.0, min(m_start, max(0.0, video_dur - 3.0)))
+            m_end = min(video_dur, max(m_start + 3.0, m_end))
+
+            # Optional subtle snap to scene boundaries (max 2 seconds adjustment)
+            best_start = m_start
+            best_end = m_end
+            for s_start, s_end in scenes:
+                if abs(s_start - m_start) <= 2.0:
+                    best_start = s_start
+                if abs(s_end - m_end) <= 2.0:
+                    best_end = s_end
+
+            moment["start_time"] = round(best_start, 1)
+            moment["end_time"] = round(best_end, 1)
+
+        highlight_clips = []
+        total_moments = len(moments)
+        for idx, moment in enumerate(moments):
+            if total_moments > 0:
+                clip_pct = 85 + int(((idx + 1) / total_moments) * 10) # 85% -> 95%
+                update_progress(min(clip_pct, 95), f"Step 6/6: Slicing Highlight Clip {idx + 1}/{total_moments}")
+                
             highlight_filename = f"hl_{uuid.uuid4().hex[:8]}.mp4"
             highlight_path = os.path.join(settings.HIGHLIGHTS_DIR, highlight_filename)
             
@@ -152,9 +231,28 @@ def run_ai_pipeline(video_id: int, db_session_factory, model_type: str, highligh
                     duration=moment["end_time"] - moment["start_time"]
                 )
                 db.add(db_hl)
-                
-        video.status = "completed"
+                highlight_clips.append(highlight_path)
         db.commit()
+                
+        # Step 8: Merge highlight clips into a single consolidated video
+        if highlight_clips:
+            update_progress(96, "Step 6/6: Merging Highlight Clips into Final Reel")
+            merged_filename = f"hl_merged_{uuid.uuid4().hex[:8]}.mp4"
+            merged_path = os.path.join(settings.HIGHLIGHTS_DIR, merged_filename)
+            merge_success = pipeline.merge_highlight_clips(highlight_clips, merged_path)
+            if merge_success:
+                video = db.query(models.Video).filter(models.Video.id == video_id).first()
+                if video:
+                    video.highlight_filepath = merged_path
+                    db.commit()
+                logger.info(f"Merged highlights saved successfully to: {merged_path}")
+                
+        video = db.query(models.Video).filter(models.Video.id == video_id).first()
+        if video:
+            video.status = "completed"
+            video.processing_stage = "Processing Complete"
+            video.progress_percent = 100
+            db.commit()
     except Exception as e:
         db.rollback()
         video = db.query(models.Video).filter(models.Video.id == video_id).first()
@@ -187,7 +285,7 @@ def trigger_processing(
         raise HTTPException(status_code=400, detail=f"Video is already {video.status}")
         
     # Trigger background pipeline
-    from backend.app.database import SessionLocal
+    from app.database import SessionLocal
     background_tasks.add_task(
         run_ai_pipeline, 
         video.id, 
@@ -272,6 +370,28 @@ def toggle_favorite_highlight(
     db.refresh(hl)
     return hl
 
+@router.put("/highlights/{hl_id}", response_model=schemas.HighlightResponse)
+def update_highlight_title(
+    hl_id: int,
+    payload: schemas.HighlightUpdate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_user)
+):
+    hl = db.query(models.Highlight).filter(models.Highlight.id == hl_id).first()
+    if not hl:
+        raise HTTPException(status_code=404, detail="Highlight not found")
+        
+    if current_user.role != "admin" and hl.video.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized")
+        
+    if not payload.title or not payload.title.strip():
+        raise HTTPException(status_code=400, detail="Title cannot be empty")
+        
+    hl.title = payload.title
+    db.commit()
+    db.refresh(hl)
+    return hl
+
 @router.get("/highlights/{hl_id}/download")
 def download_highlight_clip(
     hl_id: int,
@@ -282,7 +402,30 @@ def download_highlight_clip(
     if not hl or not hl.filepath or not os.path.exists(hl.filepath):
         raise HTTPException(status_code=404, detail="Highlight file not found")
         
-    return FileResponse(hl.filepath, media_type="video/mp4", filename=os.path.basename(hl.filepath))
+    safe_name = f"{export.get_safe_filename(hl.title)}.mp4"
+    return FileResponse(hl.filepath, media_type="video/mp4", filename=safe_name)
+
+@router.get("/{id}/highlight-reel/download")
+def download_highlight_reel(
+    id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(auth.get_current_user)
+):
+    video = db.query(models.Video).filter(models.Video.id == id).first()
+    if not video:
+        raise HTTPException(status_code=404, detail="Video not found")
+        
+    if current_user.role != "admin" and video.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized to access this video")
+        
+    if not video.highlight_filepath or not os.path.exists(video.highlight_filepath):
+        raise HTTPException(status_code=404, detail="Consolidated highlight video not found")
+        
+    return FileResponse(
+        video.highlight_filepath, 
+        media_type="video/mp4", 
+        filename=f"hl_merged_{video.title.replace(' ', '_')}.mp4"
+    )
 
 @router.get("/{id}/export/{fmt}")
 def export_video_data(
@@ -317,24 +460,28 @@ def export_video_data(
         out_path = os.path.join(settings.SUMMARIES_DIR, f"{id}_summary.md")
         with open(out_path, "w", encoding="utf-8") as f:
             f.write(md)
-        return FileResponse(out_path, media_type="text/markdown", filename=f"{video.title}_summary.md")
+        safe_filename = f"{export.get_safe_filename(video.title)}_summary.md"
+        return FileResponse(out_path, media_type="text/markdown", filename=safe_filename)
         
     elif fmt == "pdf":
         out_path = os.path.join(settings.SUMMARIES_DIR, f"{id}_summary.pdf")
         export.generate_pdf_report(v_data, hls_data, out_path)
-        return FileResponse(out_path, media_type="application/pdf", filename=f"{video.title}_report.pdf")
+        safe_filename = f"{export.get_safe_filename(video.title)}_report.pdf"
+        return FileResponse(out_path, media_type="application/pdf", filename=safe_filename)
         
     elif fmt == "docx":
         out_path = os.path.join(settings.SUMMARIES_DIR, f"{id}_summary.docx")
         export.generate_docx_report(v_data, hls_data, out_path)
-        return FileResponse(out_path, media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document", filename=f"{video.title}_report.docx")
+        safe_filename = f"{export.get_safe_filename(video.title)}_report.docx"
+        return FileResponse(out_path, media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document", filename=safe_filename)
         
     elif fmt == "transcript":
         transcript_text = "\n".join([f"[{s.start_time:.1f}s - {s.end_time:.1f}s]: {s.text}" for s in video.transcript_segments])
         out_path = os.path.join(settings.TRANSCRIPTS_DIR, f"{id}_transcript.txt")
         with open(out_path, "w", encoding="utf-8") as f:
             f.write(transcript_text)
-        return FileResponse(out_path, media_type="text/plain", filename=f"{video.title}_transcript.txt")
+        safe_filename = f"{export.get_safe_filename(video.title)}_transcript.txt"
+        return FileResponse(out_path, media_type="text/plain", filename=safe_filename)
         
     elif fmt == "zip":
         md = export.generate_markdown_summary(v_data, hls_data)
@@ -346,11 +493,14 @@ def export_video_data(
         docx_path = os.path.join(settings.SUMMARIES_DIR, f"{id}_summary.docx")
         export.generate_docx_report(v_data, hls_data, docx_path)
         
-        hl_paths = [h.filepath for h in video.highlights if os.path.exists(h.filepath)]
+        highlights_to_zip = [{"filepath": h.filepath, "title": h.title} for h in video.highlights if os.path.exists(h.filepath)]
+        if video.highlight_filepath and os.path.exists(video.highlight_filepath):
+            highlights_to_zip.append({"filepath": video.highlight_filepath, "title": f"hl_merged_{video.title}"})
         
         zip_path = os.path.join(settings.SUMMARIES_DIR, f"{id}_package.zip")
-        export.create_zip_package(video.title, md, transcript_text, pdf_path, docx_path, hl_paths, zip_path)
-        return FileResponse(zip_path, media_type="application/zip", filename=f"{video.title}_package.zip")
+        export.create_zip_package(video.title, md, transcript_text, pdf_path, docx_path, highlights_to_zip, zip_path)
+        safe_zip_filename = f"{export.get_safe_filename(video.title)}_package.zip"
+        return FileResponse(zip_path, media_type="application/zip", filename=safe_zip_filename)
         
     raise HTTPException(status_code=400, detail="Invalid format selected")
 
@@ -371,6 +521,11 @@ def delete_video(
     try:
         if os.path.exists(video.filepath):
             os.remove(video.filepath)
+        if video.highlight_filepath and os.path.exists(video.highlight_filepath):
+            try:
+                os.remove(video.highlight_filepath)
+            except Exception as ex:
+                logger.warning(f"Error removing consolidated highlight reel: {ex}")
         for hl in video.highlights:
             if os.path.exists(hl.filepath):
                 os.remove(hl.filepath)

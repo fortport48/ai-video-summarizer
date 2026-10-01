@@ -1,7 +1,7 @@
 import datetime
 from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime, ForeignKey, Text, JSON
 from sqlalchemy.orm import relationship
-from backend.app.database import Base
+from app.database import Base
 
 class User(Base):
     __tablename__ = "users"
@@ -26,10 +26,12 @@ class Video(Base):
     duration = Column(Float, default=0.0) # in seconds
     file_size = Column(Integer, default=0) # in bytes
     status = Column(String, default="pending") # 'pending', 'processing', 'completed', 'failed'
+    processing_stage = Column(String, default="Initializing pipeline...")
+    progress_percent = Column(Integer, default=0)
     error_message = Column(Text, nullable=True)
+    highlight_filepath = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
-    # AI Data (Stored as text or JSON to support SQLite & PostgreSQL)
     summary = Column(Text, nullable=True)
     bullet_points = Column(JSON, nullable=True)     # list of strings
     key_insights = Column(JSON, nullable=True)      # list of strings

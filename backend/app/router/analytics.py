@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
-from backend.app.database import get_db
-from backend.app import models, schemas, auth
+from app.database import get_db
+from app import models, schemas, auth
 from collections import Counter
 import os
 import datetime

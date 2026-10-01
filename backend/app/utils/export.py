@@ -1,10 +1,22 @@
 import os
 import zipfile
 import logging
+import re
 from typing import List, Dict, Any
-from backend.app.config import settings
+from app.config import settings
 
 logger = logging.getLogger("uvicorn.error")
+
+def get_safe_filename(title: str, default: str = "highlight") -> str:
+    if not title:
+        return default
+    # Remove characters that are not alphanumeric, spaces, underscores, or dashes
+    cleaned = re.sub(r'[^\w\s\-]', '', title)
+    # Replace spaces and multiple dashes/underscores with a single underscore
+    cleaned = re.sub(r'[\s\-]+', '_', cleaned)
+    cleaned = cleaned.strip('_')
+    return cleaned if cleaned else default
+
 
 def generate_markdown_summary(video_data: dict, highlights: list) -> str:
     md = []
@@ -149,7 +161,7 @@ def generate_docx_report(video_data: dict, highlights: list, output_path: str) -
             f.write(f"DOCX GENERATION FALLBACK\n\nTitle: {video_data.get('title')}")
         return True
 
-def create_zip_package(video_title: str, md_content: str, transcript_text: str, pdf_path: str, docx_path: str, highlight_paths: list, zip_output_path: str) -> bool:
+def create_zip_package(video_title: str, md_content: str, transcript_text: str, pdf_path: str, docx_path: str, highlights: List[Dict[str, Any]], zip_output_path: str) -> bool:
     try:
         with zipfile.ZipFile(zip_output_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
             # Add files to ZIP
@@ -161,9 +173,19 @@ def create_zip_package(video_title: str, md_content: str, transcript_text: str, 
             if docx_path and os.path.exists(docx_path):
                 zipf.write(docx_path, os.path.basename(docx_path))
                 
-            for hpath in highlight_paths:
+            used_names = set()
+            for hl in highlights:
+                hpath = hl.get("filepath")
+                htitle = hl.get("title")
                 if hpath and os.path.exists(hpath):
-                    zipf.write(hpath, f"highlights/{os.path.basename(hpath)}")
+                    base_safe = get_safe_filename(htitle)
+                    safe_name = f"{base_safe}.mp4"
+                    counter = 1
+                    while safe_name in used_names:
+                        safe_name = f"{base_safe}_{counter}.mp4"
+                        counter += 1
+                    used_names.add(safe_name)
+                    zipf.write(hpath, f"highlights/{safe_name}")
                     
         return True
     except Exception as e:

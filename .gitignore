@@ -1,11 +1,15 @@
-# Node dependency directory
+# Node dependency directories
 node_modules/
+frontend/node_modules/
+**/node_modules/
 dist/
 .eslintcache
 *.local
 
-# Python environment & cache
+# Python environments & cache
 venv/
+backend/venv/
+**/venv/
 __pycache__/
 *.pyc
 *.pyo
@@ -14,6 +18,7 @@ __pycache__/
 
 # Local databases and configs
 .env
+*.db
 video_summarizer.db
 video_summarizer.db-journal
 
@@ -26,3 +31,5 @@ backend/uploads/
 backend/highlights/
 backend/summaries/
 backend/transcripts/
+
+.vercel

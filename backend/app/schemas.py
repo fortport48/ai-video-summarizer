@@ -2,7 +2,6 @@ from pydantic import BaseModel, EmailStr
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 
-# Token Schemas
 class Token(BaseModel):
     access_token: str
     token_type: str
@@ -10,7 +9,6 @@ class Token(BaseModel):
 class TokenData(BaseModel):
     username: Optional[str] = None
 
-# User Schemas
 class UserBase(BaseModel):
     username: str
     email: EmailStr
@@ -28,7 +26,6 @@ class UserResponse(UserBase):
     class Config:
         from_attributes = True
 
-# Video Schemas
 class VideoBase(BaseModel):
     title: str
 
@@ -40,7 +37,10 @@ class VideoResponse(BaseModel):
     duration: float
     file_size: int
     status: str
+    processing_stage: Optional[str] = "Initializing..."
+    progress_percent: Optional[int] = 0
     error_message: Optional[str] = None
+    highlight_filepath: Optional[str] = None
     created_at: datetime
     sentiment: Optional[str] = None
     reading_time: Optional[int] = None
@@ -70,7 +70,6 @@ class VideoDetailResponse(VideoResponse):
     class Config:
         from_attributes = True
 
-# Highlight Schemas
 class HighlightResponse(BaseModel):
     id: int
     video_id: int
@@ -89,7 +88,9 @@ class HighlightResponse(BaseModel):
 class HighlightToggleFavorite(BaseModel):
     is_favorite: bool
 
-# Chat Schemas
+class HighlightUpdate(BaseModel):
+    title: str
+
 class ChatRequest(BaseModel):
     message: str
 
@@ -101,7 +102,6 @@ class ChatResponse(BaseModel):
     class Config:
         from_attributes = True
 
-# Analytics Schema
 class AnalyticsResponse(BaseModel):
     total_videos: int
     processed_videos: int
