@@ -32,8 +32,18 @@ export const AppProvider = ({ children }) => {
     aiModel: 'Gemini'
   });
 
-  // Base API configuration (supports VITE_API, VITE, or VITE_API_URL)
-  const API_URL = import.meta.env.VITE_API || import.meta.env.VITE || import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000/api';
+  // Base API configuration (supports VITE_API, VITE, or VITE_API_URL and auto-sanitizes /api)
+  const getSanitizedApiUrl = () => {
+    let raw = (import.meta.env.VITE_API || import.meta.env.VITE || import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000/api').trim();
+    // Remove trailing slashes
+    raw = raw.replace(/\/+$/, '');
+    // Ensure URL ends with /api
+    if (!raw.endsWith('/api')) {
+      raw = `${raw}/api`;
+    }
+    return raw;
+  };
+  const API_URL = getSanitizedApiUrl();
 
   useEffect(() => {
     if (theme === 'dark') {
